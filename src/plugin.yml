@@ -1,0 +1,47 @@
+name: TidyingChest
+description: Easy way to tidying up your chests.
+version: 0.1
+
+author: arboriginal
+# website: https://www.spigotmc.org/resources/...
+dev-url: https://github.com/arboriginal/TidyingChest
+
+depend: [ ]
+softdepend: [ ]
+
+api-version: 1.13
+database: false
+
+main: me.arboriginal.TidyingChest.TCPlugin
+
+commands:
+  tc-reload:
+    description: Reload TidyingChest configuration
+    permission: tc.reload
+
+permissions:
+  tc.reload:
+    description: Allows to reload the configuration.
+    default: op
+
+  tc.create:
+    description: Allows to create a tidying chest.
+    default: true
+
+
+  tc.create.ROOT.unlimited: # Require tc.create permission
+    description: Create unlimited root signs.
+    default: false
+  # You can use tc.create.ROOT.<limitation-name>, see config.yml
+  tc.create.ROOT.default:
+    description: Use « default » limit for root signs.
+    default: true
+
+
+  tc.create.TARGET.unlimited: # Require tc.create permission
+    description: Create unlimited target signs.
+    default: false
+  # You can use tc.create.TARGET.<limitation-name>, see config.yml
+  tc.create.TARGET.default:
+    description: Use « default » limit for target signs.
+    default: true

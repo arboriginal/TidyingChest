@@ -1,0 +1,74 @@
+# You can use in messages and other strings formating codes, prefixed with « § » or « & »:
+# https://wiki.ess3.net/mc/ (don't forget to adjust the symbol).
+
+# Signs definitions
+signs:
+  # This sign type is to put on chest where you will put items (and they go to TARGET chests)
+  ROOT:
+    name: "deposit"            # Name displayed in messages
+    type: "&8[&9&lTidying&8]"  # Displayed on the row TYPE  of the sign
+    owner: "&8({owner}&8)"     # Displayed on the row OWNER of the sign
+    aliases: # Aliases are short tags player can type instead of the long type name
+    - "[tc]" # Player can also type the ROOT.type string (with of without formating codes)
+    rows: # Order of rows displayed on the sign...
+    - TYPE  # Type name of the connected chest
+    - FREE  # Line the user can use to display what he wants (his own custom name for example)
+    - OWNER # Name of the player who has created the tidying chest
+    - ITEM  # Not used in this type but keep in config to have 4 elements in this list (4 rows on a sign)
+    limits:      # Number of tidying chest of this type a player can create
+      default: 2 # Correspond to the permission « tc.create.ROOT.default »
+      # You can add custom limits permission by adding something here:
+    # example: 10  <-- will correspond to the permission « tc.create.ROOT.example »
+
+  # This sign type is to put on chest where you will put items (and they go to TARGET chests)
+  TARGET:
+    name: "target"                  # Name displayed in messages
+    type: "&8[&9&lTidyingTarget&8]" # Displayed on the row TYPE  of the sign
+    owner: "&8({owner}&8)"          # Displayed on the row OWNER of the sign
+    item: "&1{item}"                # Displayed on the row ITEM  of the sign
+    not_set: "&c&lHit with item!"   # Displayed on the row ITEM  of the sign when item is not yet set
+    catchall: "&a&lcatch-all"       # Displayed on the row ITEM  of the sign when it will takes all not managed items by other TARGET chests.
+    aliases:  # Aliases are short tags player can type instead of the long type name
+    - "[tct]" # Player can also type the TARGET.type string (with of without formating codes)
+    - "[tt]"
+    rows: # Order of rows displayed on the sign...
+    - TYPE  # Type name of the connected chest
+    - FREE  # Line the user can use to display what he wants (his own custom name for example)
+    - OWNER # Name of the player who has created the tidying chest
+    - ITEM  # Item name managed by this tidying chest, items of this type will be send from TARGET chest to this one
+    limits:       # Number of tidying chest of this type a player can create
+      default: 50 # Correspond to the permission « tc.create.TARGET.default »
+      # You can add custom limits permission by adding something here:
+    # example: 100 <-- will correspond to the permission « tc.create.TARGET.example »
+
+  # BEWARE: For both ROOT and TARGET, if you change type, aliases or rows order,
+  #         this can result in previous created tidying chests were not being considered by the plugin.
+  #
+  # When the plugin start (server start / reload or plugin reload with plugman for example),
+  # created chests are checked from the database and if not a valid tidying chest is present at the stored location,
+  # the database row is removed. So "physical" chests (and their signs) are not touched but no more managed.
+
+messages:
+  # For other messages, you can use {prefix} as substitution of this prefix.
+  prefix: "&8[&eTidyingChest&8] "
+  reloaded: "{prefix}&aConfiguration reloaded."
+  orphan_search: "{prefix}&6Search for orphan chests..."
+  orphan_finish: "{prefix}&aNo orphans found ({number} chests checked)."
+  orphan_removed: "{prefix}&eFound {number} orphans chests: Removed from database!"
+  limit_reached: "{prefix}&cYou have reached your limit for {type} chests."
+  already_connected: "{prefix}&cA {type} sign is already connected to this chest!"
+  already_exists: "{prefix}&cYou already have a {type} chest for this!"
+  err_transfer: "{prefix}&cError transfering items from {type} chest!"
+  err_rows: "{prefix}&cError in rows definition for sign of type {type}, using default..."
+  err_file: "{prefix}&cCan't create the log file ({file})..."
+  err_write: "{prefix}&cCan't write to log file ({file})..."
+  err_db: "{prefix}&cCan't connect to the database, disabling the plugin..."
+  err_cnt: "{prefix}&cError executing a SQL count query..."
+  err_del: "{prefix}&cError executing a SQL delete query ({key})..."
+  err_set: "{prefix}&cError executing a SQL update query ({key})..."
+
+# Modifying those settings require a plugin restart (plugman reload or server reload / restart)
+database:
+  type: "sqlite"
+  base: "TidyingChest.db"
+  table: "tidying_chests"
