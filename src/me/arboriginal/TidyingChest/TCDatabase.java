@@ -239,7 +239,7 @@ class TCDatabase {
       query.setString(3, type);
       query.setString(4, material);
 
-      err = (query.executeUpdate() != 1);
+      err = (query.executeUpdate() == 0);
     }
     catch (SQLException error) {
       log(sql, error);
