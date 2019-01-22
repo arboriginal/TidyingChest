@@ -30,14 +30,20 @@ class TCDatabase {
   public TCDatabase(TCPlugin plugin) throws SQLException {
     tc    = plugin;
     table = tc.config.getString("database.table");
-    db    = DriverManager.getConnection(
-        "jdbc:sqlite:" + tc.getDataFolder() + '/' + tc.config.getString("database.base"));
+
+    String type = tc.config.getString("database.type");
+
+    db = (type.equals("sqlite")
+        ? DriverManager.getConnection("jdbc:sqlite:" + tc.getDataFolder() + '/' + tc.config.getString("database.file"))
+        : DriverManager.getConnection("jdbc:" + type + "://" + tc.config.getString("database.host")
+            + ":" + tc.config.getInt("database.port") + "/" + tc.config.getString("database.base"),
+            tc.config.getString("database.user"), tc.config.getString("database.pass")));
 
     Statement stmt = db.createStatement();
     createTable(stmt);
-    createIndex(stmt, "owner");
-    createIndex(stmt, "type");
-    createIndex(stmt, "material");
+    createIndex(stmt, type, "owner");
+    createIndex(stmt, type, "type");
+    createIndex(stmt, type, "material");
     stmt.close();
   }
 
@@ -70,7 +76,8 @@ class TCDatabase {
     try {
       PreparedStatement query = db.prepareStatement(sql);
       for (int i = 0; i < vals.size(); i++) query.setString(i + 1, vals.get(i));
-      return query.executeQuery().getInt("locations");
+      ResultSet set = query.executeQuery();
+      if (set.isBeforeFirst() && set.next()) return set.getInt("locations");
     }
     catch (SQLException error) {
       tc.getLogger().warning(tc.prepareText("err_cnt"));
@@ -152,7 +159,7 @@ class TCDatabase {
       query.setString(1, location);
       ResultSet set = query.executeQuery();
 
-      if (set.isBeforeFirst())
+      if (set.isBeforeFirst() && set.next())
         return ImmutableMap.of(
             "location", location,
             "owner", set.getString("owner"),
@@ -247,13 +254,30 @@ class TCDatabase {
   // Private methods
   // ----------------------------------------------------------------------------------------------
 
-  private void createIndex(Statement stmt, String index) throws SQLException {
-    stmt.execute("CREATE INDEX IF NOT EXISTS \"" + index + "\" ON \"" + table + "\" (\"" + index + "\");");
+  private boolean createIndex(Statement stmt, String type, String index) throws SQLException {
+    String sql = "CREATE INDEX ";
+
+    switch (type) {
+      case "mysql":
+        ResultSet set = stmt.executeQuery("SELECT COUNT(1) AS \"" + index + "\" FROM INFORMATION_SCHEMA.STATISTICS "
+            + "WHERE table_schema=DATABASE() AND table_name=\"" + table + "\" AND index_name=\"" + index + "\";");
+        if (set.isBeforeFirst() && set.next() && set.getInt(index) == 1) return true;
+        break;
+
+      case "sqlite":
+        sql += "IF NOT EXISTS ";
+        break;
+
+      default:
+        return false;
+    }
+
+    return stmt.execute(sql + index + " ON " + table + " (" + index + ");");
   }
 
-  private void createTable(Statement stmt) throws SQLException {
-    stmt.execute("CREATE TABLE IF NOT EXISTS " + table + " ("
-        + "created DATETIME DEFAULT CURRENT_TIMESTAMP,"
+  private boolean createTable(Statement stmt) throws SQLException {
+    return stmt.execute("CREATE TABLE IF NOT EXISTS " + table + " ("
+        + "created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
         + "location VARCHAR(255) NOT NULL PRIMARY KEY,"
         + "owner VARCHAR(255) NOT NULL,"
         + "type VARCHAR(255) NOT NULL,"

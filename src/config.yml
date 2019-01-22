@@ -69,6 +69,15 @@ messages:
 
 # Modifying those settings require a plugin restart (plugman reload or server reload / restart)
 database:
+  # SQLite : Use a file to store the datas (default)
   type: "sqlite"
-  base: "TidyingChest.db"
+  file: "TidyingChest.db"
   table: "tidying_chests"
+  # For other database support, use those settings instead (only tested with MySQL)
+# type: "mysql"
+# host: "myhost.database.com"
+# port: 3306
+# user: "root"
+# pass: "root"
+# base: "minecraft"
+# table: "tidying_chests"

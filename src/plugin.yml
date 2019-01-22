@@ -1,9 +1,9 @@
 name: TidyingChest
 description: Easy way to tidying up your chests.
-version: 0.1
+version: 0.2
 
 author: arboriginal
-# website: https://www.spigotmc.org/resources/...
+website: https://www.spigotmc.org/resources/tidyingchest.64206/
 dev-url: https://github.com/arboriginal/TidyingChest
 
 depend: [ ]

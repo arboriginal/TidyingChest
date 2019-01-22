@@ -62,7 +62,7 @@ public class TCPlugin extends JavaPlugin implements Listener {
     }
     catch (Exception e) {
       getServer().getPluginManager().disablePlugin(this);
-      getLogger().severe(er);
+      getLogger().severe(er + "\n" + e.getMessage());
       // No need to go on, it will not work
       return;
     }
