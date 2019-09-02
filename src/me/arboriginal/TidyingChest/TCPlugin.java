@@ -5,10 +5,12 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event.Result;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -93,7 +95,7 @@ public class TCPlugin extends JavaPlugin implements Listener {
 
     if (event.getBlock().getType().equals(Material.CHEST))
       chest = chests.get((Chest) event.getBlock().getState());
-    else if (event.getBlock().getType().equals(Material.WALL_SIGN))
+    else if (event.getBlock().getBlockData() instanceof WallSign)
       chest = chests.get((Sign) event.getBlock().getState());
 
     if (chest != null) chests.del(chest);
@@ -118,9 +120,11 @@ public class TCPlugin extends JavaPlugin implements Listener {
 
   @EventHandler
   public void onPlayerInteract(PlayerInteractEvent event) { // @formatter:off
-    if (    event.isCancelled() || event.getHand() == EquipmentSlot.OFF_HAND
-        || !event.getClickedBlock().getType().equals(Material.WALL_SIGN)
-        || !event.getPlayer().hasPermission("tc.create")) return;
+    if (event.getHand() == EquipmentSlot.OFF_HAND
+    || !event.useInteractedBlock().equals(Result.ALLOW)
+    || !event.useItemInHand().equals(Result.DEFAULT)
+    || !(event.getClickedBlock().getBlockData() instanceof WallSign)
+    || !event.getPlayer().hasPermission("tc.create")) return;
 
     TidyingChest chest  = chests.get((Sign) event.getClickedBlock().getState());
     Player       player = event.getPlayer();
@@ -140,7 +144,7 @@ public class TCPlugin extends JavaPlugin implements Listener {
   @EventHandler
   public void onSignChange(SignChangeEvent event) { // @formatter:off
     if (    event.isCancelled()
-        || !event.getBlock().getType().equals(Material.WALL_SIGN)
+        || !(event.getBlock().getBlockData() instanceof WallSign)
         || !event.getPlayer().hasPermission("tc.create")) return;
 
     Player player = event.getPlayer();

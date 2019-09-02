@@ -1,6 +1,6 @@
 name: TidyingChest
 description: Easy way to tidying up your chests.
-version: 0.3
+version: 0.4
 
 author: arboriginal
 website: https://www.spigotmc.org/resources/tidyingchest.64206/
@@ -9,7 +9,7 @@ dev-url: https://github.com/arboriginal/TidyingChest
 depend: [ ]
 softdepend: [ ]
 
-api-version: 1.13
+api-version: 1.14
 database: true
 
 main: me.arboriginal.TidyingChest.TCPlugin

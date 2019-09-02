@@ -13,6 +13,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -78,7 +79,7 @@ class TCManager {
   }
 
   protected TidyingChest get(Sign sign, UUID uid) {
-    Block block = sign.getBlock().getRelative(((org.bukkit.material.Sign) sign.getData()).getAttachedFace());
+    Block block = getConnectedBlock(sign);
     if (!block.getType().equals(Material.CHEST)) return null;
 
     Types type = signType(sign);
@@ -194,11 +195,10 @@ class TCManager {
   protected Sign signConnected(Block origin, Sign sign) {
     for (BlockFace face : Arrays.asList(BlockFace.NORTH, BlockFace.WEST, BlockFace.SOUTH, BlockFace.EAST)) {
       Block block = origin.getRelative(face);
-      if (!block.getType().equals(Material.WALL_SIGN)) continue;
+      if (!(block.getBlockData() instanceof WallSign)) continue;
 
       Sign thisSign = (Sign) block.getState();
-      if ((sign != null && sign.equals(thisSign)) || (!thisSign.getBlock().getRelative(
-          ((org.bukkit.material.Sign) thisSign.getData()).getAttachedFace()).equals(origin)))
+      if ((sign != null && sign.equals(thisSign)) || !origin.equals(getConnectedBlock(thisSign)))
         continue;
 
       if (signType(thisSign) != null) return thisSign;
@@ -368,6 +368,13 @@ class TCManager {
     catch (Exception e) {}
 
     return chest;
+  }
+
+  private Block getConnectedBlock(Sign sign) {
+    Block    block = sign.getBlock();
+    WallSign data  = (WallSign) block.getState().getBlockData();
+
+    return block.getRelative(data.getFacing().getOppositeFace());
   }
 
   private void signRow(Sign sign, Types type, Rows row, String key) {
