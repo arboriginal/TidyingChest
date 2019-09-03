@@ -58,6 +58,7 @@ messages:
   limit_reached: "{prefix}&cYou have reached your limit for {type} chests."
   already_connected: "{prefix}&cA {type} sign is already connected to this chest!"
   already_exists: "{prefix}&cYou already have a {type} chest for this!"
+  world_not_allowed: "{prefix}&cYou can't create a {type} chest in this world!"
   err_transfer: "{prefix}&cError transfering items from {type} chest!"
   err_rows: "{prefix}&cError in rows definition for sign of type {type}, using default..."
   err_file: "{prefix}&cCan't create the log file ({file})..."

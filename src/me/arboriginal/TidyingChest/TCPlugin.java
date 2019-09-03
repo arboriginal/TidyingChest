@@ -159,6 +159,9 @@ public class TCPlugin extends JavaPlugin implements Listener {
         
         if (oSign != null) { chest.type = chests.signType(oSign); error = "already_connected"; }
         else if (chests.limitReached(player, chest.type))         error = "limit_reached";
+        else if (!player.hasPermission("tc.create." + chest.type + ".world.*")
+              && !player.hasPermission("tc.create." + chest.type + ".world." + player.getWorld().getName()))
+          error = "world_not_allowed";
         
         if (error == null) chests.refresh(chest); else {
           player.sendMessage(prepareText(error, "type", config.getString("signs." + chest.type + ".name")));

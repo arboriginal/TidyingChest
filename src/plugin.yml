@@ -1,6 +1,6 @@
 name: TidyingChest
 description: Easy way to tidying up your chests.
-version: 0.4
+version: 0.5
 
 author: arboriginal
 website: https://www.spigotmc.org/resources/tidyingchest.64206/
@@ -30,7 +30,7 @@ permissions:
 
 
   tc.create.ROOT.unlimited: # Require tc.create permission
-    description: Create unlimited root signs.
+    description: No limitation for root signs.
     default: false
   # You can use tc.create.ROOT.<limitation-name>, see config.yml
   tc.create.ROOT.default:
@@ -39,9 +39,22 @@ permissions:
 
 
   tc.create.TARGET.unlimited: # Require tc.create permission
-    description: Create unlimited target signs.
+    description: No limitation for target signs.
     default: false
   # You can use tc.create.TARGET.<limitation-name>, see config.yml
   tc.create.TARGET.default:
     description: Use « default » limit for target signs.
     default: true
+
+
+  tc.create.ROOT.world.*: # Require tc.create permission
+    description: Allows to create root signs in any world
+    default: true
+  # You can use tc.create.ROOT.world.<world-name>
+  # (then remove tc.create.ROOT.world.* permission to your player)
+
+  tc.create.TARGET.world.*: # Require tc.create permission
+    description: Allows to create target signs in any world
+    default: true
+  # You can use tc.create.TARGET.world.<world-name>
+  # (then remove tc.create.TARGET.world.* permission to your player)
