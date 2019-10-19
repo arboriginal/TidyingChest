@@ -1,18 +1,17 @@
-name: TidyingChest
-description: Easy way to tidying up your chests.
-version: 0.5
+name: ${project.name}
+description: ${project.description}
+version: ${project.version}
 
 author: arboriginal
-website: https://www.spigotmc.org/resources/tidyingchest.64206/
-dev-url: https://github.com/arboriginal/TidyingChest
+website: https://www.spigotmc.org/resources/${spigot-id}/
+dev-url: https://github.com/arboriginal/${project.artifactId}
+
+main: ${project.groupId}.${project.artifactId}.${spigo-main}
+api-version: ${spigot-api}
 
 depend: [ ]
 softdepend: [ ]
-
-api-version: 1.14
 database: true
-
-main: me.arboriginal.TidyingChest.TCPlugin
 
 commands:
   tc-reload:

@@ -52,9 +52,9 @@ messages:
   # For other messages, you can use {prefix} as substitution of this prefix.
   prefix: "&8[&eTidyingChest&8] "
   reloaded: "{prefix}&aConfiguration reloaded."
-  orphan_search: "{prefix}&6Search for orphan chests..."
-  orphan_finish: "{prefix}&aNo orphans found ({number} chests checked)."
-  orphan_removed: "{prefix}&eFound {number} orphans chests: Removed from database!"
+  orphan_search: "&6Search for orphan chests..."
+  orphan_finish: "&aNo orphans found ({number} chests checked)."
+  orphan_removed: "&eFound {number} orphans chests: Removed from database!"
   limit_reached: "{prefix}&cYou have reached your limit for {type} chests."
   already_connected: "{prefix}&cA {type} sign is already connected to this chest!"
   already_exists: "{prefix}&cYou already have a {type} chest for this!"
