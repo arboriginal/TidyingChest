@@ -3,10 +3,16 @@ package me.arboriginal.TidyingChest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -16,19 +22,46 @@ import org.bukkit.block.Sign;
 import org.bukkit.block.data.type.WallSign;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitRunnable;
+import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableMap;
 
 class TCManager {
-    // @formatter:off
     private TCPlugin tc;
-    private HashMap<Types, HashMap<Rows, Integer>> signRows;
 
+    private int    LOCMAXSHOWN, TARGET_delay;
+    private String LOCSEPARATOR, ROOT_name, ROOT_type, TARGET_catch, TARGET_name, TARGET_type;
+
+    private List<String>         ROOT_alias, TARGET_alias;
+    private ConfigurationSection ROOT_perms, TARGET_perms, WORLD_ALIAS;
+
+    private HashMap<String, TidyingChest>              locationCache;
+    private HashMap<String, BukkitRunnable>            pendingTargets;
+    private HashMap<UUID, ArrayList<String>>           rootCache;
+    private HashMap<Types, HashMap<Rows, Integer>>     signRows;
+    private HashMap<UUID, HashBiMap<Material, String>> targetCache;
+
+    // @formatter:off
     static enum Rows  { FREE, ITEM, OWNER, TYPE }
     static enum Types { ROOT, TARGET }
     // @formatter:on
+
+    // ----------------------------------------------------------------------------------------------
+    // Private classes                                                                 @formatter:off
+    // ----------------------------------------------------------------------------------------------
+
+    private abstract class ReSyncAction implements Callable<Void> { Object result = null;
+        @Override public Void call() { execute(); return null; } abstract void execute();
+    }
+
+    private class TidyingChest { UUID uid; Types type;
+        TidyingChest(UUID uid, Types type) { this.uid = uid; this.type = type; }
+    }
 
     // ----------------------------------------------------------------------------------------------
     // Constructor methods
@@ -36,328 +69,178 @@ class TCManager {
 
     public TCManager(TCPlugin plugin) {
         tc = plugin;
+
+        locationCache  = new HashMap<String, TidyingChest>();
+        pendingTargets = new HashMap<String, BukkitRunnable>();
+        rootCache      = new HashMap<UUID, ArrayList<String>>();
+        targetCache    = new HashMap<UUID, HashBiMap<Material, String>>();
+
+        loadConfiguration();
     }
 
     // ----------------------------------------------------------------------------------------------
-    // Custom classes
+    // Package methods > Player interactions                                            @formatter:on
     // ----------------------------------------------------------------------------------------------
 
-    class TidyingChest { // @formatter:off
-                     UUID uid;        Chest chest;       Sign  sign;       Types type;    Material item;
-        TidyingChest(UUID uid,        Chest chest,        Sign sign,       Types type,    Material item) {
-               this.uid = uid; this.chest = chest; this.sign = sign; this.type = type; this.item = item; }
-    } // @formatter:on
+    void add(Sign sign, Player player) {
+        Types type = signType(sign);
+        if (type == null || !allowed(sign, player, type)) return;
 
-    // ----------------------------------------------------------------------------------------------
-    // Package methods
-    // ----------------------------------------------------------------------------------------------
+        if (type == Types.ROOT) create(player, sign, type, null);
+        else {
+            String message = tc.prepareText("TARGET_pending");
+            if (!message.isEmpty()) player.sendMessage(message);
 
-    boolean del(TidyingChest chest) {
-        return tc.db.del(locationEncode(chest.chest.getBlock()));
+            signRefresh(sign, player, type, null);
+            signBreakIncompleteLater(sign);
+        }
     }
 
-    TidyingChest get(Chest chest) {
-        return get(chest, null);
-    }
-
-    TidyingChest get(Chest chest, ImmutableMap<String, String> datas) {
-        Sign sign = signConnected(chest);
-        if (sign == null || signType(sign) == null) return null;
-
-        if (datas == null) datas = tc.db.get(locationEncode(chest.getBlock()));
-        if (datas == null) return null;
-
-        return get(chest, sign, datas);
-    }
-
-    TidyingChest get(Sign sign) {
-        return get(sign, null);
-    }
-
-    TidyingChest get(Sign sign, UUID uid) {
-        Block block = getConnectedBlock(sign);
-        if (block.getType() != Material.CHEST) return null;
+    void addTarget(Sign sign, Player player) {
+        if (!signIsIncomplete(sign)) return;
 
         Types type = signType(sign);
-        if (type == null) return null;
+        if (type != Types.TARGET || !allowed(sign, player, type)) return;
 
-        ImmutableMap<String, String> datas = tc.db.get(locationEncode(block));
+        Material item = player.getInventory().getItemInMainHand().getType();
+        create(player, sign, type, (item == null) ? Material.AIR : item);
+    }
 
-        if (datas == null) {
-            if (uid == null) return null;
+    void del(Chest chest, Player player) {
+        String[] sides = getChestSides(chest.getInventory());
+        if (sides == null) return;
 
-            datas = ImmutableMap.of("material", "",
-                    "location", locationEncode(block), "owner", uid.toString(), "type", type.toString());
+        asyncGet(sides, new ReSyncAction() {
+            @Override
+            void execute() {
+                String location = (String) result;
+
+                if (location != null) asyncDel(location, new ReSyncAction() {
+                    @Override
+                    void execute() {
+                        if (!result.equals(true)) return;
+
+                        TidyingChest tcChest = cacheDel(location);
+                        if (tcChest == null) return;
+
+                        String message = tc.prepareText(tcChest.type + "_unlinked");
+                        if (!message.isEmpty()) player.sendMessage(message);
+                    }
+                });
+            }
+        });
+    }
+
+    void del(Sign sign, Player player) {
+        if (signType(sign) == null) return;
+        Chest chest = getConnectedChest(sign);
+        if (chest != null) del(chest, player);
+    }
+
+    void transfer(Inventory inventory) {
+        String[] sides = getChestSides(inventory);
+        if (sides == null) return;
+
+        asyncGet(sides, new ReSyncAction() {
+            @Override
+            void execute() {
+                if (result == null) return;
+                TidyingChest tcChest = locationCache.get(result);
+                if (tcChest != null && tcChest.type == Types.ROOT) transfer(inventory, tcChest.uid);
+            }
+        });
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Package methods > Global management (called by the plugin)
+    // ----------------------------------------------------------------------------------------------
+
+    void clearPendingTargets() {
+        Iterator<String> it = pendingTargets.keySet().iterator();
+
+        while (it.hasNext()) {
+            BukkitRunnable task = pendingTargets.get(it.next());
+            if (task != null && !task.isCancelled()) task.run();
+            it.remove();
         }
-
-        return get((Chest) block.getState(), sign, datas);
     }
 
-    boolean limitReached(Player player, Types type) {
-        if (player.hasPermission("tc.create." + type + ".unlimited")) return false;
+    void loadConfiguration() {
+        ROOT_alias   = tc.config.getStringList("signs.ROOT.aliases");
+        ROOT_name    = tc.config.getString("signs.ROOT.name");
+        ROOT_perms   = tc.config.getConfigurationSection("signs.ROOT.limits");
+        ROOT_type    = tc.config.getString("signs.ROOT.type");
+        TARGET_alias = tc.config.getStringList("signs.TARGET.aliases");
+        TARGET_name  = tc.config.getString("signs.TARGET.name");
+        TARGET_perms = tc.config.getConfigurationSection("signs.TARGET.limits");
+        TARGET_type  = tc.config.getString("signs.TARGET.type");
+        TARGET_catch = tc.config.getString("signs.TARGET.catchall");
+        TARGET_delay = tc.config.getInt("signs.TARGET.delay") * 20;
+        LOCMAXSHOWN  = tc.config.getInt("max_locations_shown");
+        LOCSEPARATOR = tc.formatText(tc.config.getString("messages.exists_location_chests_separator"));
+        WORLD_ALIAS  = tc.config.getConfigurationSection("world_aliases");
 
-        int count = tc.db.count(
-                ImmutableMap.of("owner", player.getUniqueId().toString(), "type", type.toString()));
-
-        ConfigurationSection perms = tc.config.getConfigurationSection("signs." + type + ".limits");
-
-        for (String key : perms.getKeys(false))
-            if (player.hasPermission("tc.create." + type + "." + key) && perms.getInt(key) > count) return false;
-
-        return true;
+        signRowsPopulate();
     }
 
-    ImmutableMap<String, String> locationDecode(String location) {
-        Matcher m = Pattern.compile("^(.*):([-\\d]+)/([-\\d]+)/([-\\d]+)$").matcher(location);
-        return (m.find() && m.groupCount() != 4) ? null
-                : ImmutableMap.of("world", m.group(1), "x", m.group(2), "y", m.group(3), "z", m.group(4));
-    }
-
-    String locationEncode(Block block) {
-        return block.getWorld().getName() + ":" + block.getX() + "/" + block.getY() + "/" + block.getZ();
-    }
-
-    boolean refresh(TidyingChest chest) {
-        if (chest.type != null && chest.type == Types.ROOT) chest.item = null;
-
-        refreshSign(chest);
-
-        return tc.db.set(locationEncode(chest.chest.getBlock()), chest.uid.toString(), chest.type.toString(),
-                (chest.item == null) ? "" : chest.item.toString());
-    }
-
-    boolean refresh(TidyingChest chest, Material itemType) {
-        chest.item = itemType;
-        return refresh(chest);
-    }
-
-    void refreshSign(TidyingChest chest) {
-        signRow(chest.sign, chest.type, Rows.TYPE, "type");
-        signRow(chest.sign, chest.type, Rows.OWNER, "owner", "{owner}",
-                tc.getServer().getOfflinePlayer(chest.uid).getName());
-
-        if (chest.type == Types.TARGET)
-            if (chest.item == null) signRow(chest.sign, chest.type, Rows.ITEM, "not_set");
-            else signRow(chest.sign, chest.type, Rows.ITEM, "item", "{item}", (chest.item == Material.AIR)
-                    ? tc.config.getString("signs." + chest.type + "." + "catchall")
-                    : chest.item.name());
-
-        chest.sign.update();
-    }
-
-    void removeOrphans() {
+    void removeOrphans(int maxRows, boolean checkTypes) {
         tc.getLogger().info(tc.prepareText("orphan_search"));
-        List<String> orphans = new ArrayList<String>();
-        int          checked = 0;
+        checkTypes &= tc.reqSign;
 
-        for (ImmutableMap<String, String> datas : tc.db.get()) {
-            Chest chest = getChestAt(datas.get("location"));
-            if (chest == null || get(chest, datas) == null) orphans.add(datas.get("location"));
-            checked++;
-        }
+        int total = 0, removed = 0;
 
-        if (orphans.isEmpty())
-            tc.getLogger().info(tc.prepareText("orphan_finish", "number", checked + ""));
-        else if (tc.db.del(orphans))
-            tc.getLogger().warning(tc.prepareText("orphan_removed", "number", orphans.size() + ""));
-    }
+        for (int pass = 0;; pass++) {
+            ArrayList<ImmutableMap<String, String>> rows = tc.db.getAll(pass * maxRows, maxRows);
 
-    Sign signConnected(Chest chest) {
-        return signConnected(chest, null);
-    }
+            int count = rows.size();
+            if (count == 0) break;
 
-    Sign signConnected(Chest chest, Sign sign) {
-        if (!(chest.getInventory().getHolder() instanceof DoubleChest)) return signConnected(chest.getBlock(), sign);
+            tc.getLogger().info(
+                    tc.prepareText("orphan_pass", ImmutableMap.of("pass", (pass + 1) + "", "maxRows", maxRows + "")));
 
-        DoubleChest dc = (DoubleChest) chest.getInventory().getHolder();
+            ArrayList<String> orphans = new ArrayList<String>();
 
-        Sign left = signConnected(((Chest) dc.getLeftSide()).getBlock(), sign);
-        return (left == null) ? signConnected(((Chest) dc.getRightSide()).getBlock(), sign) : left;
-    }
+            for (ImmutableMap<String, String> datas : rows) {
+                String location = datas.get("location");
+                if (isOrphan(location, checkTypes ? datas.get("type") : null)) orphans.add(location);
+            }
 
-    Sign signConnected(Block origin, Sign sign) {
-        for (BlockFace face : Arrays.asList(BlockFace.NORTH, BlockFace.WEST, BlockFace.SOUTH, BlockFace.EAST)) {
-            Block block = origin.getRelative(face);
-            if (!(block.getBlockData() instanceof WallSign)) continue;
+            total += count;
 
-            Sign thisSign = (Sign) block.getState();
-            if ((sign != null && sign.equals(thisSign)) || !origin.equals(getConnectedBlock(thisSign)))
-                continue;
-
-            if (signType(thisSign) != null) return thisSign;
-        }
-
-        return null;
-    }
-
-    void signRowsInit() {
-        signRows = new HashMap<Types, HashMap<Rows, Integer>>();
-
-        for (Types type : Types.values()) {
-            String key = "signs." + type + ".rows";
-            signRows.put(type, signRowsImport(tc.config.getStringList(key)));
-
-            if (signRows.get(type).size() != Rows.values().length) {
-                tc.getLogger().warning(tc.prepareText("err_rows", ImmutableMap.of("type", type.toString())));
-                signRows.put(type, signRowsImport(tc.config.getDefaults().getStringList(key)));
+            if (orphans.isEmpty())
+                tc.getLogger().info(tc.prepareText("orphan_finish", "number", count + ""));
+            else if (tc.db.del(orphans, "orphans")) {
+                tc.getLogger().warning(tc.prepareText("orphan_removed", "number", orphans.size() + ""));
+                removed += orphans.size();
             }
         }
-    }
 
-    Types signType(Sign sign) {
-        for (Types type : Types.values()) if (signType(sign, type)) return type;
-
-        return null;
-    }
-
-    boolean signType(Sign sign, Types type) {
-        String typeRow = tc.cleanText(sign.getLine(signRows.get(type).get(Rows.TYPE)));
-
-        if (typeRow.isEmpty()) return false;
-        if (typeRow.equals(tc.cleanText(tc.config.getString("signs." + type + ".type")))) return true;
-
-        for (String alias : tc.config.getStringList("signs." + type + ".aliases"))
-            if (typeRow.equals(tc.cleanText(alias))) return true;
-
-        return false;
-    }
-
-    boolean transfer(Inventory inventory) {
-        InventoryHolder holder = inventory.getHolder();
-        TidyingChest    chest  = null;
-
-        if (holder instanceof Chest)
-            chest = get((Chest) holder);
-        else if (holder instanceof DoubleChest) {
-            chest = get((Chest) ((DoubleChest) holder).getLeftSide());
-            if (chest == null) chest = get((Chest) ((DoubleChest) holder).getRightSide());
-        }
-        // @formatter:off
-        if (chest != null) switch (chest.type) {
-            case ROOT: return transfer(inventory, chest.uid);
-
-            case TARGET: if (chest.item != null)
-                for (ImmutableMap<String, String> datas
-                    : tc.db.get(chest.uid.toString(), Types.ROOT.toString()))
-                {
-                    Chest rootChest = getChestAt(datas.get("location"));
-                    if (rootChest == null) continue;
-
-                    TidyingChest root = get(rootChest, datas);
-                    if (root == null || root.type != Types.ROOT) continue;
-
-                    transfer(rootChest.getInventory(), root.uid, chest.item);
-                } break;
-        } // @formatter:on
-        return true;
-    }
-
-    boolean transfer(Inventory inventory, UUID uid) {
-        HashMap<String, List<Integer>> types = new HashMap<String, List<Integer>>();
-
-        ItemStack[] stacks = inventory.getContents();
-        for (int i = 0; i < stacks.length; i++) {
-            ItemStack stack = stacks[i];
-            if (stack == null) continue;
-
-            String type = stack.getType().toString();
-            if (!types.containsKey(type)) types.put(type, new ArrayList<Integer>());
-            types.get(type).add(i);
-        }
-
-        if (types.isEmpty()) return true;
-
-        types.put(Material.AIR.toString(), new ArrayList<Integer>());
-        return transfer(inventory, uid, types);
-    }
-
-    boolean transfer(Inventory inventory, UUID uid, Material item) {
-        List<Integer> slots  = new ArrayList<Integer>();
-        ItemStack[]   stacks = inventory.getContents();
-
-        for (int i = 0; i < stacks.length; i++) {
-            ItemStack stack = stacks[i];
-            if (stack != null && stack.getType() == item) slots.add(i);
-        }
-
-        if (slots.isEmpty()) return false;
-
-        HashMap<String, List<Integer>> types = new HashMap<String, List<Integer>>();
-        types.put(item.toString(), slots);
-
-        return transfer(inventory, uid, types);
-    }
-
-    boolean transfer(Inventory inventory, UUID uid, HashMap<String, List<Integer>> types) {
-        HashMap<String, String> targets = tc.db.get(uid.toString(), Types.TARGET.toString(), types.keySet());
-        if (targets == null) return false;
-        if (targets.isEmpty()) return true;
-
-        String catchallKey = Material.AIR.toString();
-        Chest  catchall    = null;
-
-        if (targets.containsKey(catchallKey)) {
-            catchall = getChestAt(targets.get(catchallKey));
-            types.remove(catchallKey);
-        }
-
-        for (String type : types.keySet()) {
-            Chest chest = targets.containsKey(type) ? getChestAt(targets.get(type)) : null;
-            if (chest == null) chest = catchall;
-            if (chest != null) for (Integer slot : types.get(type))
-                inventory.setItem(slot, chest.getInventory().addItem(inventory.getItem(slot)).get(0));
-        }
-
-        return true;
+        tc.getLogger().info(
+                tc.prepareText("orphan_complete", ImmutableMap.of("verified", total + "", "removed", removed + "")));
     }
 
     // ----------------------------------------------------------------------------------------------
-    // Private methods
+    // Private methods > Global management (helpers for methods called by the plugin)
     // ----------------------------------------------------------------------------------------------
 
-    private TidyingChest get(Chest chest, Sign sign, ImmutableMap<String, String> datas) {
-        try {
-            Types type = Types.valueOf(datas.get("type"));
+    private boolean isOrphan(String location, String type) {
+        Chest chest = getChestAt(location);
+        if (chest == null) return true;
 
-            return new TidyingChest(UUID.fromString(datas.get("owner")), chest, sign, type,
-                    (type == Types.ROOT || datas.get("material").isEmpty()) ? null
-                            : Material.valueOf(datas.get("material")));
-        }
-        catch (Exception e) {
-            tc.getLogger().warning(e.getMessage());
-            return null;
-        }
-    }
-
-    private Chest getChestAt(String location) {
-        ImmutableMap<String, String> coords = locationDecode(location);
-        if (coords == null) return null;
+        Sign sign = getConnectedSign(chest, null);
+        if (sign == null && tc.reqSign) return true;
+        if (type == null) return false;
 
         try {
-            return (Chest) tc.getServer().getWorld(coords.get("world")).getBlockAt(
-                    Integer.parseInt(coords.get("x")),
-                    Integer.parseInt(coords.get("y")),
-                    Integer.parseInt(coords.get("z"))).getState();
+            if (signType(sign, (Types.valueOf(type) == Types.ROOT))) return false;
+
+            tc.getLogger().warning(tc.prepareText("orphan_wrong_type", "key", location));
         }
         catch (Exception e) {
-            return null;
+            tc.getLogger().warning(tc.prepareText("orphan_unknown_type", "key", location));
         }
-    }
 
-    private Block getConnectedBlock(Sign sign) {
-        Block block = sign.getBlock();
-        return block.getRelative(((WallSign) block.getState().getBlockData()).getFacing().getOppositeFace());
-    }
-
-    private void signRow(Sign sign, Types type, Rows row, String key) {
-        signRow(sign, type, row, key, null, null);
-    }
-
-    private void signRow(Sign sign, Types type, Rows row, String key, String from, String replace) {
-        String text = tc.config.getString("signs." + type + "." + key);
-        if (from != null) text = text.replace(from, replace);
-
-        sign.setLine(signRows.get(type).get(row), tc.formatText(text));
+        return true;
     }
 
     private HashMap<Rows, Integer> signRowsImport(List<String> list) {
@@ -369,5 +252,450 @@ class TCManager {
         catch (Exception e) {}
 
         return map;
+    }
+
+    private void signRowsPopulate() {
+        signRows = new HashMap<Types, HashMap<Rows, Integer>>();
+        signRowsPopulate(Types.ROOT);
+        signRowsPopulate(Types.TARGET);
+    }
+
+    private void signRowsPopulate(Types type) {
+        String key = "signs." + type + ".rows";
+        signRows.put(type, signRowsImport(tc.config.getStringList(key)));
+
+        if (signRows.get(type).size() != Rows.values().length) {
+            tc.getLogger().warning(tc.prepareText("err_rows", ImmutableMap.of("type", type.toString())));
+            signRows.put(type, signRowsImport(tc.config.getDefaults().getStringList(key)));
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Location from / to String (format used in cache and database)
+    // ----------------------------------------------------------------------------------------------
+
+    private ImmutableMap<String, String> locationDecode(String location) {
+        Matcher m = Pattern.compile("^(.*):([-\\d]+)/([-\\d]+)/([-\\d]+)$").matcher(location);
+        return (m.find() && m.groupCount() != 4) ? null
+                : ImmutableMap.of("world", m.group(1), "x", m.group(2), "y", m.group(3), "z", m.group(4));
+    }
+
+    private String locationEncode(Location loc) {
+        return loc.getWorld().getName() + ":" + loc.getBlockX() + "/" + loc.getBlockY() + "/" + loc.getBlockZ();
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Cache helpers
+    // ----------------------------------------------------------------------------------------------
+
+    private TidyingChest cacheDel(String location) {
+        TidyingChest tcChest = locationCache.remove(location);
+        if (tcChest == null) return null;
+
+        if (tcChest.type == Types.TARGET) {
+            Material item = targetCache.get(tcChest.uid).inverse().get(location);
+            if (item != null) targetCache.get(tcChest.uid).remove(item);
+        }
+        else rootCache.get(tcChest.uid).remove(location);
+
+        return tcChest;
+    }
+
+    private void cacheSet(UUID owner, ArrayList<ImmutableMap<String, String>> list) {
+        ArrayList<String>           roots   = new ArrayList<String>();
+        HashBiMap<Material, String> targets = HashBiMap.create();
+
+        list.forEach(row -> {
+            try {
+                Types    type = Types.valueOf(row.get("type"));
+                boolean  root = (type == Types.ROOT);
+                Material item = root ? null : Material.valueOf(row.get("material"));
+                String   loc  = row.get("location");
+                // @formatter:off
+                if (root) roots.add(loc); else targets.put(item, loc);
+                // @formatter:on
+                locationCache.put(loc, new TidyingChest(owner, type));
+            }
+            catch (Exception e) {
+                tc.getLogger().warning(tc.prepareText("err_row", "key", row + ""));
+            }
+        });
+
+        rootCache.put(owner, roots);
+        targetCache.put(owner, targets);
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Player permissions
+    // ----------------------------------------------------------------------------------------------
+
+    private boolean allowed(Sign sign, Player player, Types type) {
+        String error = null;
+        // @formatter:off
+             if (!player.hasPermission("tc.create")) error = "no_permission";
+        else if (!player.hasPermission("tc.create." + type + ".world.*") 
+              && !player.hasPermission("tc.create." + type + ".world." + sign.getWorld().getName()))
+            error = "world_not_allowed"; // @formatter:on
+        else {
+            Chest chest = getConnectedChest(sign);
+            if (chest == null) error = "not_connected";
+            else {
+                Sign already = getConnectedSign(chest, sign);
+                if (already != null) {
+                    error = "already_connected";
+                    type  = signType(already);
+                }
+            }
+        }
+
+        if (error == null) return true;
+
+        cancelCreation(sign, player, type, error);
+        return false;
+    }
+
+    private ArrayList<String> limitReached(Player player, Types type) {
+        if (player.hasPermission("tc.create." + type + ".unlimited")) return null;
+
+        ArrayList<String> locations = new ArrayList<String>();
+
+        if (type == Types.ROOT) locations = rootCache.get(player.getUniqueId());
+        else locations.addAll(targetCache.get(player.getUniqueId()).values());
+
+        int count = locations.size();
+        if (count == 0) return null;
+
+        ConfigurationSection perms = (type == Types.ROOT) ? ROOT_perms : TARGET_perms;
+
+        for (String key : perms.getKeys(false))
+            if (player.hasPermission("tc.create." + type + "." + key) && perms.getInt(key) > count) return null;
+
+        return locations;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Sign helpers
+    // ----------------------------------------------------------------------------------------------
+
+    private void signBreakIncompleteLater(Sign sign) {
+        String key = signIncompleteKey(sign);
+
+        BukkitRunnable task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (isCancelled()) return;
+                pendingTargets.remove(key);
+                sign.getBlock().breakNaturally();
+                cancel();
+            }
+        };
+
+        pendingTargets.put(key, task);
+        task.runTaskLater(tc, TARGET_delay);
+    }
+
+    private String signIncompleteKey(Sign sign) {
+        return locationEncode(sign.getLocation());
+    }
+
+    private boolean signIsIncomplete(Sign sign) {
+        return pendingTargets.containsKey(signIncompleteKey(sign));
+    }
+
+    private boolean signRefresh(Sign sign, Player player, Types type, Material item) {
+        signRow(sign, type, Rows.TYPE, "type");
+        signRow(sign, type, Rows.OWNER, "owner", "{owner}", player.getName());
+
+        if (type == Types.TARGET) {
+            if (item == null) signRow(sign, type, Rows.ITEM, "not_set");
+            else signRow(sign, type, Rows.ITEM, "item", "{item}",
+                    (item == Material.AIR) ? TARGET_catch : item.name());
+        }
+
+        return sign.update();
+    }
+
+    private void signRow(Sign sign, Types type, Rows row, String key) {
+        signRow(sign, type, row, key, null, null);
+    }
+
+    private void signRow(Sign sign, Types type, Rows row, String key, String from, String replace) {
+        String text = tc.config.getString("signs." + type + "." + key);
+        if (from != null) text = text.replace(from, replace);
+        sign.setLine(signRows.get(type).get(row), tc.formatText(text));
+    }
+
+    private Types signType(Sign sign) {
+        if (!(sign.getBlockData() instanceof WallSign)) return null;
+        if (signType(sign, false)) return Types.TARGET;
+        if (signType(sign, true)) return Types.ROOT;
+        return null;
+    }
+
+    private boolean signType(Sign sign, boolean root) {
+        String typeRow = tc.cleanText(sign.getLine(signRows.get(root ? Types.ROOT : Types.TARGET).get(Rows.TYPE)));
+
+        if (typeRow.isEmpty()) return false;
+        if (typeRow.equals(tc.cleanText(root ? ROOT_type : TARGET_type))) return true;
+
+        for (String alias : root ? ROOT_alias : TARGET_alias)
+            if (typeRow.equals(tc.cleanText(alias))) return true;
+
+        return false;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Block getters
+    // ----------------------------------------------------------------------------------------------
+
+    private String[] getChestSides(Inventory inventory) {
+        if (inventory.getType() != InventoryType.CHEST) return null;
+
+        InventoryHolder holder = inventory.getHolder();
+
+        if (holder instanceof DoubleChest) {
+            return new String[] {
+                    locationEncode(((DoubleChest) holder).getLeftSide().getInventory().getLocation()),
+                    locationEncode(((DoubleChest) holder).getRightSide().getInventory().getLocation())
+            };
+        }
+
+        return new String[] { locationEncode(inventory.getLocation()) };
+    }
+
+    private Chest getChestAt(String location) {
+        ImmutableMap<String, String> coords = locationDecode(location);
+        if (coords == null) return null;
+
+        try {
+            Block block = tc.getServer().getWorld(coords.get("world")).getBlockAt(
+                    Integer.parseInt(coords.get("x")),
+                    Integer.parseInt(coords.get("y")),
+                    Integer.parseInt(coords.get("z")));
+
+            if (block.getType() == Material.CHEST) return (Chest) block.getState();
+        }
+        catch (Exception e) {}
+
+        return null;
+    }
+
+    private Chest getConnectedChest(Sign sign) {
+        Block block = sign.getBlock().getRelative(((WallSign) sign.getBlockData()).getFacing().getOppositeFace());
+        return (block != null && block.getType() == Material.CHEST) ? (Chest) block.getState() : null;
+    }
+
+    private Sign getConnectedSign(Block origin, Sign sign) {
+        for (BlockFace face : Arrays.asList(BlockFace.NORTH, BlockFace.WEST, BlockFace.SOUTH, BlockFace.EAST)) {
+            Block block = origin.getRelative(face);
+            if (!(block.getBlockData() instanceof WallSign)) continue;
+
+            Sign thisSign = (Sign) block.getState();
+            if ((sign != null && sign.equals(thisSign)) || signType(thisSign) == null) continue;
+
+            Chest chest = getConnectedChest(thisSign);
+            if (chest != null && origin.equals(chest.getBlock())) return thisSign;
+        }
+
+        return null;
+    }
+
+    private Sign getConnectedSign(Chest chest, Sign sign) {
+        if (!(chest.getInventory() instanceof DoubleChestInventory)) return getConnectedSign(chest.getBlock(), sign);
+
+        DoubleChest dc = (DoubleChest) chest.getInventory().getHolder();
+
+        Sign left = getConnectedSign(((Chest) dc.getLeftSide()).getBlock(), sign);
+        return (left == null) ? getConnectedSign(((Chest) dc.getRightSide()).getBlock(), sign) : left;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Player interactions helpers
+    // ----------------------------------------------------------------------------------------------
+
+    private boolean cancelCreation(Sign sign, Player player, Types type, String error) {
+        return cancelCreation(sign, player, type, error, null);
+    }
+
+    private boolean cancelCreation(Sign sign, Player player, Types type, String error, ArrayList<String> locations) {
+        player.sendMessage(tc.prepareText(error, "type", (type == Types.ROOT) ? ROOT_name : TARGET_name));
+
+        if (locations != null && player.hasPermission("tc.create.show_loc")) {
+            locations = formatLocations(locations);
+
+            if (locations.size() == 1)
+                player.sendMessage(tc.prepareText("exists_location_chest", "location", locations.get(0)));
+            else if (locations.size() > 0)
+                player.sendMessage(tc.prepareText("exists_location_chests", "locations",
+                        LOCSEPARATOR + String.join(LOCSEPARATOR, locations)));
+        }
+
+        return sign.getBlock().breakNaturally();
+    }
+
+    private ArrayList<String> formatLocations(ArrayList<String> locations) {
+        ArrayList<String> formatted = new ArrayList<String>();
+
+        int i = 0, max = Math.min(locations.size(), LOCMAXSHOWN);
+        while (i < max) { // @formatter:off
+            ImmutableMap<String, String> parts = locationDecode(locations.get(i++));
+            String location = tc.prepareText("exists_location_format", parts), world = parts.get("world");
+            if (WORLD_ALIAS != null && WORLD_ALIAS.contains(world))
+                location = location.replace(world, WORLD_ALIAS.getString(world));
+            formatted.add(location); // @formatter:on
+        }
+
+        return formatted;
+    }
+
+    private void confirmCreation(Player player, Types type) {
+        String message = tc.prepareText(type + "_linked");
+        if (!message.isEmpty()) player.sendMessage(message);
+
+        if (tc.reqSign) return;
+
+        message = tc.prepareText("can_be_removed");
+        if (!message.isEmpty()) player.sendMessage(message);
+    }
+
+    private void create(Player player, Sign sign, Types type, Material item) {
+        BukkitRunnable task = pendingTargets.remove(signIncompleteKey(sign));
+        if (task != null && !task.isCancelled()) task.cancel();
+
+        UUID uid = player.getUniqueId();
+        asyncGet(uid, new ReSyncAction() {
+            @Override
+            void execute() {
+                String error = null, loc = null;
+
+                ArrayList<String> locations = new ArrayList<String>();
+
+                if (!result.equals(true)) error = "db_error";
+                else {
+                    Chest chest = getConnectedChest(sign);
+                    if (chest == null) error = "chest_not_found";
+                    else {
+                        loc = locationEncode(chest.getBlock().getLocation());
+                        if (rootCache.get(uid).contains(loc) || targetCache.get(uid).containsValue(loc))
+                            error = "already_connected";
+                    }
+                }
+
+                if (error == null && type == Types.TARGET) {
+                    String exists = targetCache.get(uid).get(item);
+                    if (exists != null) {
+                        error = "already_exists";
+                        locations.add(exists);
+                    }
+                }
+
+                if (error == null) {
+                    locations = limitReached(player, type);
+                    if (locations != null) error = "limit_reached";
+                }
+
+                if (error == null) store(player, sign, loc, type, item);
+                else cancelCreation(sign, player, type, error, locations);
+            }
+        });
+    }
+
+    private void store(Player player, Sign sign, String location, Types type, Material item) {
+        UUID uid = player.getUniqueId();
+
+        asyncSet(location, uid, type, item, new ReSyncAction() {
+            @Override
+            void execute() {
+                if (result.equals(true)) {
+                    if (type == Types.ROOT) rootCache.get(uid).add(location);
+                    else targetCache.get(uid).put(item, location);
+                    locationCache.put(location, new TidyingChest(uid, type));
+                    confirmCreation(player, type);
+                    signRefresh(sign, player, type, item);
+                }
+                else cancelCreation(sign, player, type, "db_error");
+            }
+        });
+    }
+
+    private boolean transfer(Inventory inventory, UUID uid) {
+        HashBiMap<Material, String> targets = targetCache.get(uid);
+        if (targets == null) return false;
+        if (targets.isEmpty()) return true;
+
+        HashMap<Material, Chest> chests = new HashMap<Material, Chest>();
+
+        ItemStack[] stacks = inventory.getContents();
+        for (int slot = 0; slot < stacks.length; slot++) {
+            ItemStack stack = stacks[slot];
+            if (stack == null) continue;
+
+            Material item = stack.getType();
+            if (!targets.containsKey(item)) item = Material.AIR;
+
+            if (!chests.containsKey(item)) {
+                String location = targets.get(item);
+                chests.put(item, (location == null) ? null : getChestAt(location));
+            }
+
+            Chest chest = chests.get(item);
+            if (chest == null) continue;
+
+            inventory.setItem(slot, chest.getInventory().addItem(inventory.getItem(slot)).get(0));
+        }
+
+        return true;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private Asynchronous methods /!\ Don't call any Bukkit API methods in them!
+    // ----------------------------------------------------------------------------------------------
+
+    private void async(ReSyncAction action, Supplier<?> supplier) {
+        CompletableFuture.supplyAsync(supplier).whenComplete((result, errors) -> {
+            if (errors != null) errors.printStackTrace();
+            action.result = result;
+            // @formatter:off
+            try { Bukkit.getScheduler().callSyncMethod(tc, action).get(); }
+            catch (Exception e) { e.printStackTrace(); } // @formatter:on
+        });
+    }
+
+    private void asyncDel(String location, ReSyncAction action) {
+        async(action, () -> {
+            return tc.db.del(location);
+        });
+    }
+
+    private void asyncGet(String[] locations, ReSyncAction action) {
+        async(action, () -> {
+            for (String location : locations) if (locationCache.get(location) != null) return location;
+
+            ImmutableMap<String, String> connected = tc.db.getOwner(locations);
+            if (connected == null) return null;
+
+            String owner = connected.get("owner"), location = connected.get("location");
+
+            cacheSet(UUID.fromString(owner), tc.db.getByOwner(owner));
+            return locationCache.containsKey(location) ? location : null;
+        });
+    }
+
+    private void asyncGet(UUID owner, ReSyncAction action) {
+        async(action, () -> {
+            if (targetCache.containsKey(owner)) return true;
+
+            ArrayList<ImmutableMap<String, String>> datas = tc.db.getByOwner(owner.toString());
+            if (datas == null) return false;
+
+            cacheSet(owner, datas);
+            return true;
+        });
+    }
+
+    private void asyncSet(String loc, UUID owner, Types type, Material item, ReSyncAction action) {
+        async(action, () -> {
+            return tc.db.set(loc, (item == null) ? "" : item.toString(), owner.toString(), type.toString());
+        });
     }
 }

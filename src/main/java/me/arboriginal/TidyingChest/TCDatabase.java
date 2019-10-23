@@ -14,9 +14,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Set;
 import org.bukkit.configuration.ConfigurationSection;
 import com.google.common.collect.ImmutableMap;
 
@@ -39,7 +36,7 @@ class TCDatabase {
         db = sqlite
                 ? DriverManager.getConnection("jdbc:sqlite:" + tc.getDataFolder() + '/' + config.getString("file"))
                 : DriverManager.getConnection("jdbc:" + type + "://" + config.getString("host")
-                        + ":" + config.getInt("port") + "/" + config.getString("base"),
+                        + ":" + config.getInt("port") + "/" + config.getString("base") + config.getString("options"),
                         config.getString("user"), config.getString("pass"));
 
         Statement stmt = db.createStatement();
@@ -49,9 +46,9 @@ class TCDatabase {
         "CREATE TABLE IF NOT EXISTS " + table + " (" +
             "created TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
             "location VARCHAR(255) NOT NULL," +
+            "material VARCHAR(255) NOT NULL DEFAULT \"\"," +
             "owner VARCHAR(255) NOT NULL," +
-            "type VARCHAR(255) NOT NULL," +
-            "material VARCHAR(255) NOT NULL DEFAULT \"\"" +
+            "type VARCHAR(255) NOT NULL" +
             (sqlite? "": ",UNIQUE location(location)"+
                           ",INDEX material(material)"+
                           ",INDEX owner(owner)"+
@@ -81,51 +78,17 @@ class TCDatabase {
         }
     }
 
-    int count(ImmutableMap<String, String> conditions) {
-        List<String> keys = new ArrayList<String>(), vals = new ArrayList<String>();
-
-        for (String key : conditions.keySet()) {
-            keys.add(key + " = ?");
-            vals.add(conditions.get(key));
-        }
-
-        String sql = "SELECT COUNT(*) AS locations FROM " + table + " WHERE " + String.join(" AND ", keys);
-
-        try {
-            PreparedStatement query = db.prepareStatement(sql);
-            for (int i = 0; i < vals.size(); i++) query.setString(i + 1, vals.get(i));
-
-            ResultSet set = query.executeQuery();
-            if (set.isBeforeFirst() && set.next()) return set.getInt("locations");
-        }
-        catch (SQLException error) {
-            tc.getLogger().warning(tc.prepareText("err_cnt"));
-            log(sql, error);
-        }
-
-        return 999999999;
-    }
-
     boolean del(String location) {
-        String sql = "DELETE FROM " + table + " WHERE location = ?;";
+        ArrayList<String> locations = new ArrayList<String>();
+        locations.add(location);
 
-        try {
-            PreparedStatement query = db.prepareStatement(sql);
-            query.setString(1, location);
-            query.executeUpdate();
-            return true;
-        }
-        catch (SQLException error) {
-            tc.getLogger().warning(tc.prepareText("err_del", "key", location));
-            log(sql, error);
-            return false;
-        }
+        return del(locations, location);
     }
 
-    boolean del(List<String> locations) {
+    boolean del(ArrayList<String> locations, String key) {
         String[] masks = new String[locations.size()];
         Arrays.fill(masks, "?");
-
+        // @note: can't use a single ? + query.setArray() because of SQLITE (not implemented)
         String sql = "DELETE FROM " + table + " WHERE location IN (" + String.join(",", masks) + ");";
 
         try {
@@ -136,110 +99,79 @@ class TCDatabase {
             return true;
         }
         catch (SQLException error) {
-            tc.getLogger().warning(tc.prepareText("err_del", "key", "orphans"));
+            tc.getLogger().warning(tc.prepareText("err_del", "key", key));
             log(sql, error);
             return false;
         }
     }
 
-    List<ImmutableMap<String, String>> get() {
-        List<ImmutableMap<String, String>> res = new ArrayList<ImmutableMap<String, String>>();
+    ArrayList<ImmutableMap<String, String>> getAll(int from, int limit) {
+        ArrayList<ImmutableMap<String, String>> res = new ArrayList<ImmutableMap<String, String>>();
 
-        String sql = "SELECT location, owner, type, material FROM " + table;
+        String sql = "SELECT location, material, owner, type FROM " + table + " LIMIT " + from + "," + limit;
 
         try {
             ResultSet set = db.createStatement().executeQuery(sql);
             // @formatter:off
             if (set.isBeforeFirst()) while (set.next()) res.add(ImmutableMap.of(
                 "location", set.getString("location"),
+                "material", set.getString("material"),
                 "owner",    set.getString("owner"),
-                "type",     set.getString("type"),
-                "material", set.getString("material")));
+                "type",     set.getString("type")));
         } catch (SQLException error) { log(sql, error); }
         // @formatter:on
         return res;
     }
 
-    ImmutableMap<String, String> get(String location) {
-        String sql = "SELECT owner, type, material FROM " + table + " WHERE location = ?";
+    ArrayList<ImmutableMap<String, String>> getByOwner(String owner) {
+        ArrayList<ImmutableMap<String, String>> res = new ArrayList<ImmutableMap<String, String>>();
 
-        try {
-            PreparedStatement query = db.prepareStatement(sql);
-            query.setString(1, location);
-
-            ResultSet set = query.executeQuery();
-            // @formatter:off
-            if (set.isBeforeFirst() && set.next()) return ImmutableMap.of(
-                "location", location,
-                "owner",    set.getString("owner"),
-                "type",     set.getString("type"),
-                "material", set.getString("material"));
-        } catch (SQLException error) { log(sql, (SQLException) error); }
-        // @formatter:on
-        return null;
-    }
-
-    List<ImmutableMap<String, String>> get(String owner, String targetType) {
-        List<ImmutableMap<String, String>> res = new ArrayList<ImmutableMap<String, String>>();
-
-        String sql = "SELECT location FROM " + table + " WHERE owner = ? AND type = ?";
+        String sql = "SELECT location, material, type FROM " + table + " WHERE owner = ?";
 
         try {
             PreparedStatement query = db.prepareStatement(sql);
             query.setString(1, owner);
-            query.setString(2, targetType);
 
             ResultSet set = query.executeQuery();
             // @formatter:off
             if (set.isBeforeFirst()) while (set.next()) res.add(ImmutableMap.of(
                 "location", set.getString("location"),
-                "owner",    owner,
-                "type",     targetType,
-                "material", ""));
-        } catch (SQLException error) { log(sql, error); }
+                "material", set.getString("material"),
+                "type",     set.getString("type"),
+                "owner",    owner));
+        } catch (SQLException error) { log(sql, error); return null; }
         // @formatter:on
         return res;
     }
 
-    HashMap<String, String> get(String owner, String targetType, Set<String> types) {
-        String[] masks = new String[types.size()];
+    ImmutableMap<String, String> getOwner(String[] locations) {
+        String[] masks = new String[locations.length];
         Arrays.fill(masks, "?");
-
-        String sql = "SELECT location, material FROM " + table
-                + " WHERE owner = ? AND type = ? AND material IN (" + String.join(" , ", masks) + ");";
+        // @note: can't use a single ? + query.setArray() because of SQLITE (not implemented)
+        String sql = "SELECT location, owner FROM " + table + " WHERE location IN (" + String.join(",", masks) + ")";
 
         try {
             PreparedStatement query = db.prepareStatement(sql);
-            int               i     = 0;
-            query.setString(++i, owner);
-            query.setString(++i, targetType);
+            for (int i = 0; i < locations.length; i++) query.setString(i + 1, locations[i]);
 
-            for (String type : types) query.setString(++i, type);
             ResultSet set = query.executeQuery();
-
-            HashMap<String, String> locations = new HashMap<String, String>();
-
-            if (set.isBeforeFirst())
-                while (set.next()) locations.put(set.getString("material"), set.getString("location"));
-
-            return locations;
-        }
-        catch (SQLException error) {
-            log(sql, error);
-        }
-
+            if (set.isBeforeFirst() && set.next())
+                return ImmutableMap.of("location", set.getString("location"), "owner", set.getString("owner"));
+        // @formatter:off
+        } catch (SQLException error) { log(sql, (SQLException) error); }
+        // @formatter:on
         return null;
     }
 
-    boolean set(String location, String owner, String type, String material) {
-        String sql = "REPLACE INTO " + table + " (location, owner, type, material) VALUES (?, ?, ?, ?);";
+    boolean set(String location, String material, String owner, String type) {
+        String sql = "INSERT INTO " + table + " (location, material, owner, type) VALUES (?, ?, ?, ?);";
 
         try {
             PreparedStatement query = db.prepareStatement(sql);
             query.setString(1, location);
-            query.setString(2, owner);
-            query.setString(3, type);
-            query.setString(4, material);
+            query.setString(2, material);
+            query.setString(3, owner);
+            query.setString(4, type);
 
             return (query.executeUpdate() == 1);
         }

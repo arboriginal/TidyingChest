@@ -1,8 +1,19 @@
-# You can use in messages and other strings formating codes, prefixed with « § » or « & »:
-# https://wiki.ess3.net/mc/ (don't forget to adjust the symbol).
+# TidyingChest Configuration file.
+# .
+# Visit this link to get explanation of those parameters:
+# https://github.com/arboriginal/TidyingChest/blob/master/src/main/resources/config.yml
+# .
+# To get a list of commands and permissions, read this one:
+# https://github.com/arboriginal/TidyingChest/blob/master/src/main/resources/plugin.yml
+# .
+# You can use, in messages and other strings, formating codes prefixed with « & » or « § »:
+# For &: https://wiki.ess3.net/mc/ - For §: https://minecraft.gamepedia.com/Formatting_codes
 
-# Signs definitions
-signs:
+signs: # Signs definitions
+  required: true # If true, when the player break the plugin sign, the chest is no more a tidying chest.
+  # /!\ if false, the sign is still required to create the tidying chest, then the player can break it.
+  # As long as the chest is not broken by the player, it stays recognized as tidying chest.
+
   # This sign type is to put on chest where you will put items (and they go to TARGET chests)
   ROOT:
     name: "deposit"            # Name displayed in messages
@@ -40,6 +51,7 @@ signs:
       default: 50 # Correspond to the permission « tc.create.TARGET.default »
       # You can add custom limits permission by adding something here:
     # example: 100 <-- will correspond to the permission « tc.create.TARGET.example »
+    delay: 30 # Seconds before a not completed target chest (item not assignated) is canceled (breaks).
 
   # BEWARE: For both ROOT and TARGET, if you change type, aliases or rows order,
   #         this can result in previous created tidying chests were not being considered by the plugin.
@@ -48,38 +60,113 @@ signs:
   # created chests are checked from the database and if not a valid tidying chest is present at the stored location,
   # the database row is removed. So "physical" chests (and their signs) are not touched but no more managed.
 
+# If true, when an item from a hopper goes into a deposit chest, transfer it to the appropriate target (if any)
+hoppers_trigger_deposit: true
+# /!\ if false, doesn't prevent hoppers to send items in deposit chests, but you have to open them to trigger the transfer.
+# 
+# /!\ PAPER users: Depending on you settings, this event can not be triggered at all.
+# This is not a plugin issue but what you choose as behavior! Change your paper settings if you want it.
+# FYI, the option I'm talking is located in paper.yml: « world-settings.default.hopper.disable-move-event »
+# (or world-settings.<YOURWORLD>.hopper.disable-move-event if you have set it by world).
+# https://paper.readthedocs.io/en/latest/server/configuration.html#hopper
+
+max_locations_shown: 10 # Require permission tc.create.show_loc
+# Could be a good idea to keep a reasonable limit, because for example with default TARGET.limits.default: 50
+# the player chat will be spammed and not sure all locations will be displayed...
+
+# If you don't want your users see real worlds names, use this aliases list. 
+world_aliases: {} # <== « {} » means no aliases, if you want to set aliases, see example below:
+# world_aliases:
+#   my_long_world_name: shortname
+#   world_nether: Nether
+#   world_the_end: Ender
+
+cleanOrphans:
+  enabled: true # If true, when the plugin loads, it search for orphan tidying chest to remove
+  maxRows: 100  # Max DB rows in each pass to interact with the database (don't put very high values of datas could be lost)
+  # This is to prevent databases sends or receives 1000000 rows in one time, which could be more than communication tunnel can.
+  checkTypes: true # If true, the connected sign is verified too, a bit longer to check but prevent issues
+  # /!\ if you choose signs.required = false, then this parameter will be false whatever you choose. 
+
 messages:
-  # For other messages, you can use {prefix} as substitution of this prefix.
   prefix: "&8[&eTidyingChest&8] "
+  # For other messages, you can use {prefix} as substitution of the prefix.
+  db_connection: |-
+    &6Etablishing connection to your database...
+    &6&l----------------------------------------------------------------------------
+    &c&l      /!\ &b&lIf you see now errors like "THIS IS NOT A BUG OR A CRASH"
+    &c&l         &b&lor "The server has not responded for 10 seconds!", etc.
+    &6&l----------------------------------------------------------------------------
+    &8.
+    &6&l==> THIS IS NOT A BUG WITH &eTidyingChest&6&l!
+    &6&l==> It means your database is very slow and you'll have poor performances...
+    &6&l==> You should consider to switch to another provider or use SQLITE.
+    &8.
   reloaded: "{prefix}&aConfiguration reloaded."
   orphan_search: "&6Search for orphan chests..."
+  orphan_pass: "&7[PASS &l#{pass}&7] Scanning for next {maxRows} chests in database..."
   orphan_finish: "&aNo orphans found ({number} chests checked)."
   orphan_removed: "&eFound {number} orphans chests: Removed from database!"
+  orphan_complete: "&6All chests in your database has been verified &7(total: {verified} - {removed} removed)."
   limit_reached: "{prefix}&cYou have reached your limit for {type} chests."
-  already_connected: "{prefix}&cA {type} sign is already connected to this chest!"
+  not_connected: "{prefix}&cThis sign must be connected to a chest!"
+  already_connected: "{prefix}&cThis chest is already connected! §7({type})"
   already_exists: "{prefix}&cYou already have a {type} chest for this!"
+  no_permission: "{prefix}&cYou can't create {type} chests!"
   world_not_allowed: "{prefix}&cYou can't create a {type} chest in this world!"
-  err_transfer: "{prefix}&cError transfering items from {type} chest!"
+  db_error: "{prefix}&cThere is a problem with the database, contact an admin!"
+  chest_not_found: "{prefix}&cCan't retrieve the chest connected to this sign!"
+  # Require permission tc.create.show_loc
+  exists_location_chest: "{prefix}&7You can find this chest at {location}"
+  exists_location_chests: "{prefix}&7You can find those chests at: {locations}"
+  exists_location_chests_separator: "\n§7* "
+  exists_location_format: "&3{x}&7/&3{y}&7/&3{z} &7({world})"
+  # Errors for console log...
   err_rows: "{prefix}&cError in rows definition for sign of type {type}, using default..."
   err_file: "{prefix}&cCan't create the log file ({file})..."
   err_write: "{prefix}&cCan't write to log file ({file})..."
   err_db: "{prefix}&cCan't connect to the database, disabling the plugin..."
-  err_cnt: "{prefix}&cError executing a SQL count query..."
   err_del: "{prefix}&cError executing a SQL delete query ({key})..."
   err_set: "{prefix}&cError executing a SQL update query ({key})..."
+  err_row: "{prefix}&cError retrieving datas from SQL row ({key})..."
+  # (use « "" » if you don't want players get one of those messages)
+  ROOT_linked: "{prefix}&aDeposit chest successfully linked."      
+  ROOT_unlinked: "{prefix}&aDeposit chest successfully unlinked."
+  TARGET_linked: "{prefix}&aTarget chest successfully linked."
+  TARGET_unlinked: "{prefix}&aTarget chest successfully unlinked."
+  TARGET_pending: "{prefix}&6Now, hit the sign with an item (or empty hand to create a catchall)."
+  # only if cleanOrphans.enable = true & cleanOrphans.checkTypes = true
+  orphan_wrong_type: "&cFound a chest connected to wrong sign type ({key})... (unlinked)"
+  orphan_unknown_type: "&cFound a chest with unknown type in database ({key})... (unlinked)"
+  # only if signs.required = false (use « "" » if you don't want players get this message)
+  can_be_removed: "{prefix}&aNow, you are free to remove the sign (to stop using this chest for tidying, break it)."
 
 # Modifying those settings require a plugin restart (plugman reload or server reload / restart)
 database:
-  # SQLite : Use a file to store the datas (default)
-  type: "sqlite"
-  file: "TidyingChest.db"
-  table: "tidying_chests"
+  type: "sqlite"          # SQLite : Use a file to store the datas (default)
+  file: "TidyingChest.db" # Name of the database file (in your plugins/TidyingChest folder, auto created if not exists)
+  table: "tidying_chests" # Name of the datas table (as it's internal to the file, you probably don't care)
 
-  # For other database support, use those settings instead (only tested with MySQL)
-# type: "mysql"
-# host: "myhost.database.com"
-# port: 3306
-# user: "root"
-# pass: "root"
-# base: "minecraft"
-# table: "tidying_chests"
+# For other DB types, use this instead: (only tested with MySQL, but should work with other DB supported by JDBC)
+#
+# /!\ I recommend to only use it if you're familiar with database + if you're provider is fast enough.
+#     You'll see when the plugin starts if the connection takes time (read the warning => messages.db_connection).
+#     the connection is the only query not sent asynchronous to the database. In game, this will not freeze the server
+#     BUT your players will probably be upset to wait for the database response...
+#     (there is a cache-code but it have to be populate once per players + create/delete chests always interact with DB)
+#     SO... use something else than sqlite if you know what you do + have tested it!
+#
+# database:
+#   type: "mysql"
+#   host: "myhost.database.com"
+#   port: 3306
+#   user: "root"
+#   pass: "root"
+#   base: "minecraft"
+#   table: "tidying_chests"
+#   options: "?useSSL=false"
+#
+# "options" is an advanced parameter, in most cases you could use an empty string (or maybe use the one in example)
+# See here: https://dev.mysql.com/doc/connector-j/5.1/en/connector-j-reference-configuration-properties.html
+#
+# /!\ If database.file stays in your config, don't worry it will be ignored (except if you're using type sqlite).

@@ -27,6 +27,10 @@ permissions:
     description: Allows to create a tidying chest.
     default: true
 
+  tc.create.show_loc: # Require tc.create permission
+    description: Allows to get existing chests coords when trying to create one
+    default: true
+    # (this is used when limit is reached of same item target already exists)
 
   tc.create.ROOT.unlimited: # Require tc.create permission
     description: No limitation for root signs.
@@ -36,7 +40,6 @@ permissions:
     description: Use « default » limit for root signs.
     default: true
 
-
   tc.create.TARGET.unlimited: # Require tc.create permission
     description: No limitation for target signs.
     default: false
@@ -44,7 +47,6 @@ permissions:
   tc.create.TARGET.default:
     description: Use « default » limit for target signs.
     default: true
-
 
   tc.create.ROOT.world.*: # Require tc.create permission
     description: Allows to create root signs in any world

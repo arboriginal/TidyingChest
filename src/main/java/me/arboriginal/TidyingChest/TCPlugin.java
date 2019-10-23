@@ -10,6 +10,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.UnmodifiableIterator;
 
 public class TCPlugin extends JavaPlugin implements Listener {
+    boolean           hoppers, reqSign;
     FileConfiguration config;
     TCManager         chests;
     TCDatabase        db;
@@ -29,6 +30,7 @@ public class TCPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         super.onDisable();
+        if (chests != null) chests.clearPendingTargets();
         if (db != null) db.close();
     }
 
@@ -36,34 +38,44 @@ public class TCPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         super.onEnable();
 
-        chests = new TCManager(this);
         String er = "This plugin only works on Spigot servers!";
 
         try {
             getServer().spigot();
+            er = "Can't read the configuration!";
             reloadConfig();
+            getLogger().info(prepareText("db_connection"));
             er = prepareText("err_db");
             db = new TCDatabase(this);
         }
         catch (Exception e) {
             getServer().getPluginManager().disablePlugin(this);
-            getLogger().severe(er + "\n" + e.getMessage());
+            getLogger().severe(er);
+            e.printStackTrace();
             // No need to go on, it will not work
             return;
         }
 
-        chests.removeOrphans();
+        if (config.getBoolean("cleanOrphans.enabled"))
+            chests.removeOrphans(config.getInt("cleanOrphans.maxRows"), config.getBoolean("cleanOrphans.checkTypes"));
+
         getServer().getPluginManager().registerEvents(new TCListener(this), this);
     }
 
     @Override
     public void reloadConfig() {
         super.reloadConfig();
+
         saveDefaultConfig();
         config = getConfig();
         config.options().copyDefaults(true);
-        chests.signRowsInit();
         saveConfig();
+
+        reqSign = config.getBoolean("signs.required");
+        hoppers = config.getBoolean("hoppers_trigger_deposit");
+
+        if (chests == null) chests = new TCManager(this);
+        else chests.loadConfiguration();
     }
 
     // ----------------------------------------------------------------------------------------------
