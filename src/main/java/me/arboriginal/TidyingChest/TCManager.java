@@ -281,6 +281,7 @@ class TCManager {
     }
 
     private String locationEncode(Location loc) {
+        if (loc == null) return null;
         return loc.getWorld().getName() + ":" + loc.getBlockX() + "/" + loc.getBlockY() + "/" + loc.getBlockZ();
     }
 
@@ -379,6 +380,7 @@ class TCManager {
 
     private void signBreakIncompleteLater(Sign sign) {
         String key = signIncompleteKey(sign);
+        if (key == null) return;
 
         BukkitRunnable task = new BukkitRunnable() {
             @Override
@@ -452,6 +454,7 @@ class TCManager {
         if (inventory.getType() != InventoryType.CHEST) return null;
 
         InventoryHolder holder = inventory.getHolder();
+        if (holder == null) return null;
 
         if (holder instanceof DoubleChest) {
             return new String[] {
@@ -460,7 +463,8 @@ class TCManager {
             };
         }
 
-        return new String[] { locationEncode(inventory.getLocation()) };
+        String side = locationEncode(inventory.getLocation());
+        return (side == null) ? null : new String[] { side };
     }
 
     private Chest getChestAt(String location) {
