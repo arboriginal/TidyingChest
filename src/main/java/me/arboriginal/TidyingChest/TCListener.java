@@ -12,6 +12,7 @@ import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -54,6 +55,12 @@ class TCListener implements Listener {
          && event.useInteractedBlock() == Result.ALLOW && event.getHand() != EquipmentSlot.OFF_HAND
          && event.useItemInHand()      == Result.DEFAULT) // @formatter:on
             tc.chests.addTarget((Sign) event.getClickedBlock().getState(), event.getPlayer());
+    }
+
+    @EventHandler
+    private void onPluginEnable(PluginEnableEvent event) {
+        if (tc.chests.waitingForCleanup != null && tc.chests.waitingForCleanup.remove(event.getPlugin().getName()))
+            tc.chests.removeOrphans();
     }
 
     @EventHandler(ignoreCancelled = true)

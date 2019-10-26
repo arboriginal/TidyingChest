@@ -27,6 +27,7 @@ import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableMap;
@@ -50,6 +51,7 @@ class TCManager {
     static enum Rows  { FREE, ITEM, OWNER, TYPE }
     static enum Types { ROOT, TARGET }
     // @formatter:on
+    List<String> waitingForCleanup = null;
 
     // ----------------------------------------------------------------------------------------------
     // Private classes                                                                 @formatter:off
@@ -183,7 +185,58 @@ class TCManager {
         signRowsPopulate();
     }
 
-    void removeOrphans(int maxRows, boolean checkTypes) {
+    void orphansCleanup() {
+        waitingForCleanup = new ArrayList<String>();
+        List<String> plugins = tc.config.getStringList("world_plugins");
+
+        if (plugins != null && !plugins.isEmpty())
+            for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
+                String name = plugin.getName();
+
+                if (plugins.contains(name) && !Bukkit.getPluginManager().isPluginEnabled(plugin))
+                    waitingForCleanup.add(name);
+            }
+
+        removeOrphans();
+    }
+
+    void removeOrphans() {
+        if (waitingForCleanup == null) return;
+
+        if (waitingForCleanup.isEmpty()) {
+            waitingForCleanup = null;
+
+            removeOrphans(tc.config.getInt("cleanOrphans.maxRows"),
+                    tc.config.getBoolean("cleanOrphans.checkTypes"), tc.config.getBoolean("cleanOrphans.delete"));
+        }
+        else tc.getLogger().info(tc.prepareText("orphan_wait", "plugins", String.join(", ", waitingForCleanup)));
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Private methods > Global management (helpers for methods called by the plugin)
+    // ----------------------------------------------------------------------------------------------
+
+    private boolean isOrphan(String location, String type) {
+        Chest chest = getChestAt(location);
+        if (chest == null) return true;
+
+        Sign sign = getConnectedSign(chest, null);
+        if (sign == null && tc.reqSign) return true;
+        if (type == null) return false;
+
+        try {
+            if (signType(sign, (Types.valueOf(type) == Types.ROOT))) return false;
+
+            tc.getLogger().warning(tc.prepareText("orphan_wrong_type", "key", location));
+        }
+        catch (Exception e) {
+            tc.getLogger().warning(tc.prepareText("orphan_unknown_type", "key", location));
+        }
+
+        return true;
+    }
+
+    private void removeOrphans(int maxRows, boolean checkTypes, boolean delete) {
         tc.getLogger().info(tc.prepareText("orphan_search"));
         checkTypes &= tc.reqSign;
 
@@ -209,38 +262,20 @@ class TCManager {
 
             if (orphans.isEmpty())
                 tc.getLogger().info(tc.prepareText("orphan_finish", "number", count + ""));
-            else if (tc.db.del(orphans, "orphans")) {
-                tc.getLogger().warning(tc.prepareText("orphan_removed", "number", orphans.size() + ""));
+            else if (!delete) {
                 removed += orphans.size();
+                tc.getLogger().warning(tc.prepareText("orphan_warning", "number", orphans.size() + "")
+                        + "\n\t- " + String.join("\n\t- ", orphans));
+            }
+            else if (tc.db.del(orphans, "orphans")) {
+                removed += orphans.size();
+                tc.getLogger().warning(tc.prepareText("orphan_removed", "number", orphans.size() + ""));
             }
         }
 
-        tc.getLogger().info(
-                tc.prepareText("orphan_complete", ImmutableMap.of("verified", total + "", "removed", removed + "")));
-    }
-
-    // ----------------------------------------------------------------------------------------------
-    // Private methods > Global management (helpers for methods called by the plugin)
-    // ----------------------------------------------------------------------------------------------
-
-    private boolean isOrphan(String location, String type) {
-        Chest chest = getChestAt(location);
-        if (chest == null) return true;
-
-        Sign sign = getConnectedSign(chest, null);
-        if (sign == null && tc.reqSign) return true;
-        if (type == null) return false;
-
-        try {
-            if (signType(sign, (Types.valueOf(type) == Types.ROOT))) return false;
-
-            tc.getLogger().warning(tc.prepareText("orphan_wrong_type", "key", location));
-        }
-        catch (Exception e) {
-            tc.getLogger().warning(tc.prepareText("orphan_unknown_type", "key", location));
-        }
-
-        return true;
+        tc.getLogger().info(delete
+                ? tc.prepareText("orphan_complete", ImmutableMap.of("verified", total + "", "removed", removed + ""))
+                : tc.prepareText("orphans_not_del", ImmutableMap.of("verified", total + "", "orphans", removed + "")));
     }
 
     private HashMap<Rows, Integer> signRowsImport(List<String> list) {

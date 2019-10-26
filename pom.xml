@@ -8,7 +8,7 @@
 
     <groupId>me.arboriginal</groupId>
     <artifactId>TidyingChest</artifactId>
-    <version>0.7</version>
+    <version>0.8</version>
 
     <developers>
         <developer>
@@ -21,7 +21,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <spigot-api>1.14</spigot-api>
+        <spigot-api>1.13</spigot-api>
         <spigot-id>tidyingchest.64206</spigot-id>
         <spigo-main>TCPlugin</spigo-main>
     </properties>
@@ -37,7 +37,7 @@
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
-            <version>1.14.4-R0.1-SNAPSHOT</version>
+            <version>1.13.2-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

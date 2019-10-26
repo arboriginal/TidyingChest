@@ -56,9 +56,7 @@ public class TCPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (config.getBoolean("cleanOrphans.enabled"))
-            chests.removeOrphans(config.getInt("cleanOrphans.maxRows"), config.getBoolean("cleanOrphans.checkTypes"));
-
+        if (config.getBoolean("cleanOrphans.enabled")) chests.orphansCleanup();
         getServer().getPluginManager().registerEvents(new TCListener(this), this);
     }
 

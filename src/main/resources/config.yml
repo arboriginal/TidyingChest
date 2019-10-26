@@ -83,10 +83,21 @@ world_aliases: {} # <== « {} » means no aliases, if you want to set aliases, s
 
 cleanOrphans:
   enabled: true # If true, when the plugin loads, it search for orphan tidying chest to remove
+  delete: true  # If true, found orphans are removed from database. If false, a simple warning is displayed.
   maxRows: 100  # Max DB rows in each pass to interact with the database (don't put very high values of datas could be lost)
   # This is to prevent databases sends or receives 1000000 rows in one time, which could be more than communication tunnel can.
   checkTypes: true # If true, the connected sign is verified too, a bit longer to check but prevent issues
   # /!\ if you choose signs.required = false, then this parameter will be false whatever you choose. 
+
+# This advanced section is important to prevent your chests removed from database IF you're using a plugin which manage worlds:
+# For example, worlds created by Multiverse-Core are not detected by TidyingChest until it has loaded them,
+# so if you have chosen « cleanOrphans.enabled: true » + « cleanOrphans.delete: true », chests in those worlds
+# will be removed from your database (and I'm sure you don't want that!) so, add name of your plugins which manage worlds here. 
+world_plugins:
+  - ExtraWorlds
+  - Multiverse-Core
+# If you have a doubt about a plugin, you can add it here safely:
+# TidyingChest will simply wait this plugin is loaded before to starts its orphans cleanup.
 
 messages:
   prefix: "&8[&eTidyingChest&8] "
@@ -103,11 +114,14 @@ messages:
     &6&l==> You should consider to switch to another provider or use SQLITE.
     &8.
   reloaded: "{prefix}&aConfiguration reloaded."
+  orphan_wait: "&7Waiting for those plugins are loaded to search orphan chests: {plugins}"
   orphan_search: "&6Search for orphan chests..."
   orphan_pass: "&7[PASS &l#{pass}&7] Scanning for next {maxRows} chests in database..."
   orphan_finish: "&aNo orphans found ({number} chests checked)."
+  orphan_warning: "&eFound {number} orphans chests, keeped from database, you should verify those locations:"
   orphan_removed: "&eFound {number} orphans chests: Removed from database!"
   orphan_complete: "&6All chests in your database has been verified &7(total: {verified} - {removed} removed)."
+  orphans_not_del: "&6All chests in your database has been verified &7(total: {verified} - {orphans} orphans)."
   limit_reached: "{prefix}&cYou have reached your limit for {type} chests."
   not_connected: "{prefix}&cThis sign must be connected to a chest!"
   already_connected: "{prefix}&cThis chest is already connected! §7({type})"
