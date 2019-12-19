@@ -35,7 +35,7 @@ Because the problem can be with your configuration or another plugin:
 7. Choose a comprehensive title which shortly describe the problem
 8. Use [version] as prefix (replace "version" by your exact version number) for example: « [1.0] »
 
-You are allowed to skip some questions IF AND ONLY IF it's not applicable / relevant.
+You are allowed to skip some questions IF AND ONLY IF it's not applicable / relevant. BTW... English is not my mother language, so do not use sentences too complex for a non-native english.
 
 **Describe the bug**
 A clear and concise description of what the bug is.
