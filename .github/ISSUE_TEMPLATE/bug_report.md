@@ -22,8 +22,9 @@ Sorry for this long process but because of users, unable to read 3 lines on the 
 
 Do not hesitate to leave a comment, in Github and in Spigot forum, when a user post an incomplete bug report to ask him to report correctly, or to shut up. I let you choose your words (within the limits of Github / Spigot rules). This small action will help me not being depressive and not give up the sharing of my plugins.
 
-**Step 2: Verify your configuration**
-Because you may have a problem with your configuration:
+**Step 2: Verifications**
+Because the problem can be with your configuration or another plugin:
+
 1. Re-read plugin description and documentation
 2. Backup your actual configuration
 3. Remove my plugin configuration and restart your server (so a fresh config is generated)
