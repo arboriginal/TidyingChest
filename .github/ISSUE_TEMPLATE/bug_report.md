@@ -25,15 +25,16 @@ Do not hesitate to leave a comment, in Github and in Spigot forum, when a user p
 **Step 2: Verifications**
 Because the problem can be with your configuration or another plugin:
 
+0. Check if a similar issue exists, if yes, don't create a duplicate but add a comment to it
 1. Re-read plugin description and documentation
 2. Backup your actual configuration
 3. Remove my plugin configuration and restart your server (so a fresh config is generated)
 4. Try to change one parameter and test, change a second one and test, ...
 5. Try without your other plugins
-5. Re-add your plugins one by one and re-test each time to determine if there is an incompatibility
-6. If you didn't solved the problem, fill this report, and delete all lines above "Describe the bug".
-7. Choose a comprehensive title which shortly describe the problem
-8. Use [version] as prefix (replace "version" by your exact version number) for example: « [1.0] »
+6. Re-add your plugins one by one and re-test each time to determine if there is an incompatibility
+7. If you didn't solved the problem, fill this report, and delete all lines above "Describe the bug".
+8. Choose a comprehensive title which shortly describe the problem
+9. Use [version] as prefix (replace "version" by your exact version number) for example: « [1.0] »
 
 You are allowed to skip some questions IF AND ONLY IF it's not applicable / relevant. BTW... English is not my mother language, so do not use sentences too complex for a non-native english.
 
