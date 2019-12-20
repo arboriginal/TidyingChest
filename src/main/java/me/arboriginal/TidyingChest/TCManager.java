@@ -7,7 +7,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -141,9 +140,7 @@ class TCManager {
 
     void transfer(Inventory inventory) {
         String[] sides = getChestSides(inventory);
-        if (sides == null) return;
-
-        asyncGet(sides, new ReSyncAction() {
+        if (sides != null) asyncGet(sides, new ReSyncAction() {
             @Override
             void execute() {
                 if (result == null) return;
@@ -189,13 +186,12 @@ class TCManager {
         waitingForCleanup = new ArrayList<String>();
         List<String> plugins = tc.config.getStringList("world_plugins");
 
-        if (plugins != null && !plugins.isEmpty())
-            for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-                String name = plugin.getName();
+        if (plugins != null && !plugins.isEmpty()) for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
+            String name = plugin.getName();
 
-                if (plugins.contains(name) && !Bukkit.getPluginManager().isPluginEnabled(plugin))
-                    waitingForCleanup.add(name);
-            }
+            if (plugins.contains(name) && !Bukkit.getPluginManager().isPluginEnabled(plugin))
+                waitingForCleanup.add(name);
+        }
 
         removeOrphans();
     }
@@ -206,8 +202,8 @@ class TCManager {
         if (waitingForCleanup.isEmpty()) {
             waitingForCleanup = null;
 
-            removeOrphans(tc.config.getInt("cleanOrphans.maxRows"),
-                    tc.config.getBoolean("cleanOrphans.checkTypes"), tc.config.getBoolean("cleanOrphans.delete"));
+            removeOrphans(tc.config.getInt("cleanOrphans.maxRows"), tc.config.getBoolean("cleanOrphans.checkTypes"),
+                    tc.config.getBoolean("cleanOrphans.delete"), tc.config.getBoolean("cleanOrphans.verbose"));
         }
         else tc.getLogger().info(tc.prepareText("orphan_wait", "plugins", String.join(", ", waitingForCleanup)));
     }
@@ -226,7 +222,6 @@ class TCManager {
 
         try {
             if (signType(sign, (Types.valueOf(type) == Types.ROOT))) return false;
-
             tc.getLogger().warning(tc.prepareText("orphan_wrong_type", "key", location));
         }
         catch (Exception e) {
@@ -236,7 +231,7 @@ class TCManager {
         return true;
     }
 
-    private void removeOrphans(int maxRows, boolean checkTypes, boolean delete) {
+    private void removeOrphans(int maxRows, boolean checkTypes, boolean delete, boolean verbose) {
         tc.getLogger().info(tc.prepareText("orphan_search"));
         checkTypes &= tc.reqSign;
 
@@ -248,7 +243,7 @@ class TCManager {
             int count = rows.size();
             if (count == 0) break;
 
-            tc.getLogger().info(
+            if (verbose) tc.getLogger().info(
                     tc.prepareText("orphan_pass", ImmutableMap.of("pass", (pass + 1) + "", "maxRows", maxRows + "")));
 
             ArrayList<String> orphans = new ArrayList<String>();
@@ -260,8 +255,9 @@ class TCManager {
 
             total += count;
 
-            if (orphans.isEmpty())
-                tc.getLogger().info(tc.prepareText("orphan_finish", "number", count + ""));
+            if (orphans.isEmpty()) {
+                if (verbose) tc.getLogger().info(tc.prepareText("orphan_finish", "number", count + ""));
+            }
             else if (!delete) {
                 removed += orphans.size();
                 tc.getLogger().warning(tc.prepareText("orphan_warning", "number", orphans.size() + "")
@@ -273,7 +269,7 @@ class TCManager {
             }
         }
 
-        tc.getLogger().info(delete
+        if (verbose || removed > 0) tc.getLogger().info(delete
                 ? tc.prepareText("orphan_complete", ImmutableMap.of("verified", total + "", "removed", removed + ""))
                 : tc.prepareText("orphans_not_del", ImmutableMap.of("verified", total + "", "orphans", removed + "")));
     }
@@ -445,8 +441,7 @@ class TCManager {
 
         if (type == Types.TARGET) {
             if (item == null) signRow(sign, type, Rows.ITEM, "not_set");
-            else signRow(sign, type, Rows.ITEM, "item", "{item}",
-                    (item == Material.AIR) ? TARGET_catch : item.name());
+            else signRow(sign, type, Rows.ITEM, "item", "{item}", (item == Material.AIR) ? TARGET_catch : item.name());
         }
 
         return sign.update();
@@ -471,13 +466,9 @@ class TCManager {
 
     private boolean signType(Sign sign, boolean root) {
         String typeRow = tc.cleanText(sign.getLine(signRows.get(root ? Types.ROOT : Types.TARGET).get(Rows.TYPE)));
-
         if (typeRow.isEmpty()) return false;
         if (typeRow.equals(tc.cleanText(root ? ROOT_type : TARGET_type))) return true;
-
-        for (String alias : root ? ROOT_alias : TARGET_alias)
-            if (typeRow.equals(tc.cleanText(alias))) return true;
-
+        for (String alias : root ? ROOT_alias : TARGET_alias) if (typeRow.equals(tc.cleanText(alias))) return true;
         return false;
     }
 
@@ -491,12 +482,10 @@ class TCManager {
         InventoryHolder holder = inventory.getHolder();
         if (holder == null) return null;
 
-        if (holder instanceof DoubleChest) {
-            return new String[] {
-                    locationEncode(((DoubleChest) holder).getLeftSide().getInventory().getLocation()),
-                    locationEncode(((DoubleChest) holder).getRightSide().getInventory().getLocation())
-            };
-        }
+        if (holder instanceof DoubleChest) return new String[] {
+                locationEncode(((DoubleChest) holder).getLeftSide().getInventory().getLocation()),
+                locationEncode(((DoubleChest) holder).getRightSide().getInventory().getLocation())
+        };
 
         String side = locationEncode(inventory.getLocation());
         return (side == null) ? null : new String[] { side };
@@ -541,10 +530,8 @@ class TCManager {
 
     private Sign getConnectedSign(Chest chest, Sign sign) {
         if (!(chest.getInventory() instanceof DoubleChestInventory)) return getConnectedSign(chest.getBlock(), sign);
-
-        DoubleChest dc = (DoubleChest) chest.getInventory().getHolder();
-
-        Sign left = getConnectedSign(((Chest) dc.getLeftSide()).getBlock(), sign);
+        DoubleChest dc   = (DoubleChest) chest.getInventory().getHolder();
+        Sign        left = getConnectedSign(((Chest) dc.getLeftSide()).getBlock(), sign);
         return (left == null) ? getConnectedSign(((Chest) dc.getRightSide()).getBlock(), sign) : left;
     }
 
@@ -691,13 +678,13 @@ class TCManager {
     // ----------------------------------------------------------------------------------------------
 
     private void async(ReSyncAction action, Supplier<?> supplier) {
-        CompletableFuture.supplyAsync(supplier).whenComplete((result, errors) -> {
-            if (errors != null) errors.printStackTrace();
-            action.result = result;
-            // @formatter:off
-            try { Bukkit.getScheduler().callSyncMethod(tc, action).get(); }
-            catch (Exception e) { e.printStackTrace(); } // @formatter:on
-        });
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                action.result = supplier.get();
+                Bukkit.getScheduler().callSyncMethod(tc, action);
+            }
+        }.runTaskAsynchronously(tc);
     }
 
     private void asyncDel(String location, ReSyncAction action) {

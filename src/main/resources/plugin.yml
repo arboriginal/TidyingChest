@@ -6,7 +6,7 @@ author: arboriginal
 website: https://www.spigotmc.org/resources/${spigot-id}/
 dev-url: https://github.com/arboriginal/${project.artifactId}
 
-main: ${project.groupId}.${project.artifactId}.${spigo-main}
+main: ${project.groupId}.${project.artifactId}.${spigot-main}
 api-version: ${spigot-api}
 
 depend: [ ]

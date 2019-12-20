@@ -4,12 +4,11 @@ import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.UnmodifiableIterator;
 
-public class TCPlugin extends JavaPlugin implements Listener {
+public class TCPlugin extends JavaPlugin {
     boolean           hoppers, reqSign;
     FileConfiguration config;
     TCManager         chests;

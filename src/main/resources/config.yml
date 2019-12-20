@@ -83,6 +83,7 @@ world_aliases: {} # <== « {} » means no aliases, if you want to set aliases, s
 
 cleanOrphans:
   enabled: true # If true, when the plugin loads, it search for orphan tidying chest to remove
+  verbose: true # If true, you'll have more details displayed in the console when it search for orphans 
   delete: true  # If true, found orphans are removed from database. If false, a simple warning is displayed.
   maxRows: 100  # Max DB rows in each pass to interact with the database (don't put very high values of datas could be lost)
   # This is to prevent databases sends or receives 1000000 rows in one time, which could be more than communication tunnel can.
