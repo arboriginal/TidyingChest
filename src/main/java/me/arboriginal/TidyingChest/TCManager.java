@@ -483,8 +483,8 @@ class TCManager {
         if (holder == null) return null;
 
         if (holder instanceof DoubleChest) return new String[] {
-                locationEncode(((DoubleChest) holder).getLeftSide().getInventory().getLocation()),
-                locationEncode(((DoubleChest) holder).getRightSide().getInventory().getLocation())
+                locationEncode(((Chest) ((DoubleChest) holder).getLeftSide()).getBlock().getLocation()),
+                locationEncode(((Chest) ((DoubleChest) holder).getRightSide()).getBlock().getLocation())
         };
 
         String side = locationEncode(inventory.getLocation());
